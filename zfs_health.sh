@@ -11,14 +11,15 @@
 # 99 problems but ZFS aint one
 problems=0
 
+# TODO: Capture all emailsubjects
 
 # Health - Check if all zfs volumes are in good condition. We are looking for
 # any keyword signifying a degraded or broken array.
 
 condition=$(/sbin/zpool status | egrep -i '(DEGRADED|FAULTED|OFFLINE|UNAVAIL|REMOVED|FAIL|DESTROYED|corrupt|cannot|unrecover)')
 if [ "${condition}" ]; then
-        emailSubject="$(hostname) - ZFS pool - HEALTH fault"
-        problems=1
+  emailSubject="$(hostname) - ZFS pool - HEALTH fault"
+  problems=1
 fi
 
 
@@ -36,16 +37,13 @@ fi
 
 maxCapacity=80
 
-if [ ${problems} -eq 0 ]; then
-   capacity=$(/sbin/zpool list -H -o capacity | cut -d'%' -f1)
-   for line in ${capacity}
-     do
-       if [ "$line" -ge "$maxCapacity" ]; then
-        emailSubject="$(hostname) - ZFS pool - Capacity Exceeded"
-        problems=1
-       fi
-     done
-fi
+capacity=$(/sbin/zpool list -H -o capacity | cut -d'%' -f1)
+for line in ${capacity} ; do
+  if [ "$line" -ge "$maxCapacity" ]; then
+  emailSubject="$(hostname) - ZFS pool - Capacity Exceeded"
+  problems=$((problems+1))
+  fi
+done
 
 
 # Errors - Check the columns for READ, WRITE and CKSUM (checksum) drive errors
@@ -53,12 +51,10 @@ fi
 # are reported an email will be sent out. You should then look to replace the
 # faulty drive and run "zpool scrub" on the affected volume after resilvering.
 
-if [ ${problems} -eq 0 ]; then
-   errors=$(/sbin/zpool status | grep ONLINE | grep -v state | awk '{print $3 $4 $5}' | grep -v 000)
-   if [ "${errors}" ]; then
-        emailSubject="$(hostname) - ZFS pool - Drive Errors"
-        problems=1
-   fi
+errors=$(/sbin/zpool status | grep ONLINE | grep -v state | awk '{print $3 $4 $5}' | grep -v 000)
+if [ "${errors}" ]; then
+  emailSubject="$(hostname) - ZFS pool - Drive Errors"
+  problems=$((problems+1))
 fi
 
 
@@ -81,34 +77,28 @@ fi
 
 scrubExpire=1209600
 
-if [ ${problems} -eq 0 ]; then
-   currentDate=$(date +%s)
-   zfsVolumes=$(/sbin/zpool list -H -o name)
+currentDate=$(date +%s)
+zfsVolumes=$(/sbin/zpool list -H -o name)
 
-  for volume in ${zfsVolumes}
-   do
-    if [ $(/sbin/zpool status $volume | egrep -c "none requested") -ge 1 ]; then
-        printf "ERROR: You need to run \"zpool scrub $volume\" before this script can monitor the scrub expiration time."
-        break
-    fi
-    if [ $(/sbin/zpool status $volume | egrep -c "scrub in progress|resilver") -ge 1 ]; then
-        break
-    fi
-
-    ### Ubuntu with GNU supported date format
-    scrubRawDate=$(/sbin/zpool status $volume | grep scrub | awk '{print $11" "$12" " $13" " $14" "$15}')
-    scrubDate=$(date -d "$scrubRawDate" +%s)
-
-    ### FreeBSD with *nix supported date format
-    # scrubRawDate=$(/sbin/zpool status $volume | grep scrub | awk '{print $15 $12 $13}')
-    # scrubDate=$(date -j -f '%Y%b%e-%H%M%S' $scrubRawDate'-000000' +%s)
-
-     if [ $(($currentDate - $scrubDate)) -ge $scrubExpire ]; then
-        emailSubject="$(hostname) - ZFS pool - Scrub Time Expired. Scrub Needed on Volume(s)"
-        problems=1
-     fi
-   done
-fi
+for volume in ${zfsVolumes}; do
+  if [ $(/sbin/zpool status $volume | egrep -c "none requested") -ge 1 ]; then
+      printf "ERROR: You need to run \"zpool scrub $volume\" before this script can monitor the scrub expiration time."
+      break
+  fi
+  if [ $(/sbin/zpool status $volume | egrep -c "scrub in progress|resilver") -ge 1 ]; then
+      break
+  fi
+  ### Ubuntu with GNU supported date format
+  scrubRawDate=$(/sbin/zpool status $volume | grep scrub | awk '{print $11" "$12" " $13" " $14" "$15}')
+  scrubDate=$(date -d "$scrubRawDate" +%s)
+  ### FreeBSD with *nix supported date format
+  # scrubRawDate=$(/sbin/zpool status $volume | grep scrub | awk '{print $15 $12 $13}')
+  # scrubDate=$(date -j -f '%Y%b%e-%H%M%S' $scrubRawDate'-000000' +%s)
+  if [ $(($currentDate - $scrubDate)) -ge $scrubExpire ]; then
+    emailSubject="$(hostname) - ZFS pool - Scrub Time Expired. Scrub Needed on Volume(s)"
+    problems=$((problems+1))
+  fi
+done
 
 
 # Email - On any problems send email with drive status information and

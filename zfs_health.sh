@@ -17,7 +17,7 @@ problems=0
 
 condition=$(/sbin/zpool status | egrep -i '(DEGRADED|FAULTED|OFFLINE|UNAVAIL|REMOVED|FAIL|DESTROYED|corrupt|cannot|unrecover)')
 if [ "${condition}" ]; then
-        emailSubject="`hostname` - ZFS pool - HEALTH fault"
+        emailSubject="$(hostname) - ZFS pool - HEALTH fault"
         problems=1
 fi
 
@@ -40,9 +40,9 @@ if [ ${problems} -eq 0 ]; then
    capacity=$(/sbin/zpool list -H -o capacity | cut -d'%' -f1)
    for line in ${capacity}
      do
-       if [ $line -ge $maxCapacity ]; then
-         emailSubject="`hostname` - ZFS pool - Capacity Exceeded"
-         problems=1
+       if [ "$line" -ge "$maxCapacity" ]; then
+        emailSubject="$(hostname) - ZFS pool - Capacity Exceeded"
+        problems=1
        fi
      done
 fi
@@ -56,7 +56,7 @@ fi
 if [ ${problems} -eq 0 ]; then
    errors=$(/sbin/zpool status | grep ONLINE | grep -v state | awk '{print $3 $4 $5}' | grep -v 000)
    if [ "${errors}" ]; then
-        emailSubject="`hostname` - ZFS pool - Drive Errors"
+        emailSubject="$(hostname) - ZFS pool - Drive Errors"
         problems=1
    fi
 fi
@@ -77,8 +77,9 @@ fi
 #
 # The scrubExpire variable is in seconds. So for 8 days we calculate 8 days
 # times 24 hours times 3600 seconds to equal 691200 seconds.
+# 14d = 1209600
 
-scrubExpire=691200
+scrubExpire=1209600
 
 if [ ${problems} -eq 0 ]; then
    currentDate=$(date +%s)
@@ -95,15 +96,15 @@ if [ ${problems} -eq 0 ]; then
     fi
 
     ### Ubuntu with GNU supported date format
-    #scrubRawDate=$(/sbin/zpool status $volume | grep scrub | awk '{print $11" "$12" " $13" " $14" "$15}')
-    #scrubDate=$(date -d "$scrubRawDate" +%s)
+    scrubRawDate=$(/sbin/zpool status $volume | grep scrub | awk '{print $11" "$12" " $13" " $14" "$15}')
+    scrubDate=$(date -d "$scrubRawDate" +%s)
 
     ### FreeBSD with *nix supported date format
-     scrubRawDate=$(/sbin/zpool status $volume | grep scrub | awk '{print $15 $12 $13}')
-     scrubDate=$(date -j -f '%Y%b%e-%H%M%S' $scrubRawDate'-000000' +%s)
+    # scrubRawDate=$(/sbin/zpool status $volume | grep scrub | awk '{print $15 $12 $13}')
+    # scrubDate=$(date -j -f '%Y%b%e-%H%M%S' $scrubRawDate'-000000' +%s)
 
      if [ $(($currentDate - $scrubDate)) -ge $scrubExpire ]; then
-        emailSubject="`hostname` - ZFS pool - Scrub Time Expired. Scrub Needed on Volume(s)"
+        emailSubject="$(hostname) - ZFS pool - Scrub Time Expired. Scrub Needed on Volume(s)"
         problems=1
      fi
    done
@@ -117,8 +118,8 @@ fi
 # speaker, paging someone or updating Nagios or even BigBrother.
 
 if [ "$problems" -ne 0 ]; then
-  printf '%s\n' "$emailSubject" "" "`/sbin/zpool list`" "" "`/sbin/zpool status`" | /usr/bin/mail -s "$emailSubject" root@localhost
-  logger $emailSubject
+  printf '%s\n' "$emailSubject" "" "$(/sbin/zpool list)" "" "$(/sbin/zpool status)" | /usr/bin/mail -s "$emailSubject" root@localhost
+  logger "$emailSubject"
 fi
 
 ### EOF ###
